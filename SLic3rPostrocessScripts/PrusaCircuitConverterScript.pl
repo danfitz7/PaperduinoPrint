@@ -28,7 +28,7 @@ my $strPressureOff = "M400\nM42 P32 S0 ; Pressure on instead of compensate retra
 my $curLayerHeight = 0;
 my $curLayerNumber = 0;
 
-$^I = 'LiftedTravelMinimizingScript.bak';	#save a backup file to appease Windows
+$^I = 'PrusaCircuitConverterScript.bak';	#save a backup file to appease Windows
 while(<>){	#loop through lines of file
 	
 	next if (/; move inwards before travel/);#skip these annoying things - good idea, but Slic3r's definition of "inward" is in to our channels!
@@ -59,7 +59,7 @@ while(<>){	#loop through lines of file
 			
 		#replace retraction with presure off. Sometimes Slic3r puts "; retraction" on lines that aren't retraction, so we keep the rest of the line
 		}elsif(/(.*)(F-?\d+.?\d*).*E-?\d+.?\d*.*; retract$/){
-			print $1.((defined $2) ? $2 : "")
+			print $1.((defined $2) ? $2 : "");
 			print $strPressureOff;
 			next;
 		

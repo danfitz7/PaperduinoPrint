@@ -13,7 +13,7 @@ use warnings;
 
 my $justMovedToFirstFillPoint = 0;my $realLastFillPointCommand = "";
 
-$^I = 'ArduinoTestScript.bak';	#save a backup file to appease Windows
+$^I = 'LiftedTravelMinimizingScript.bak';	#save a backup file to appease Windows
 while(<>){	#loop through lines of file
 	
 	#found a lifted travel command
