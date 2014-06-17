@@ -25,8 +25,8 @@ use warnings;
 my $pressureOn=0;		#if the presure is currently on
 my $curExtrudingInk = 0;	#is the printer thinks it is currently extruding ink on this layer
 my $curToolIndex=0;		#currently lifted above the layer for traveling
-#my $curLayerHeight = 0;
-#my $curLayerNumber = 0;
+my $curLayerHeight = 0;
+my $curLayerNumber = -1;
 my $begunGCode = 0;		#have we reached the main body of the g code (or still in header comments)
 
 #G Code commands to insert
@@ -34,13 +34,18 @@ my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
 my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
 
 #hard coded
-my $lastFFDtoolIndex = 1;	#index of the last ordered extruder that is FDM
+my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
 
 #Extracted Slicer Parameters
 my @retract_speeds;				#list of retraction speeds for extruders
 my @retractLengthToolchange;			#list of retract lengths for tool changes of extruders
 my @retractRestartExtra;			#list of retraction lenths added to retraciton compensation for each nozzle
 my @retractRestartExtraToolchange;		#list of retraction lenths added to retraction compensation on tool changes for each nozzle
+
+#offsets
+#my $layerHeight=0.2;
+#my $numlayersFromTop = 2;
+#my $layerHeightOffset = -$numlayersFromTop*$layerHeight;			#hard coded for now
 
 my $FFDretractSpeedMultiplier=60;
 my $PNNozzleFeedrateDivider=10;
@@ -69,73 +74,90 @@ while(<>){	#loop through lines of file
 				local $"=', ';
 				print ";\tFound $count retract speeds: @retract_speeds\n";
 			}
-		}
+		}#end ifCircuit_Post_Processor
 		
+		#print harmless beginning code anyway
+		print or die $!;
 	#start of G Code has already been found	
 	}else{
 	
-		#don't set temp tof extruder 1
-		next if (/M109.*T1/ or /M104.*T1/);
-	
 		#find and record layer changes
-		if (/Z(\d+.?\d*).*;.*move to next layer.*\(\d+\)/){
-			#$curLayerHeight = $1;
-			#$curLayerNumber = $2;
-			print "; move to next layer detected. Resetting Extrusion distance.\n";
+		if (/move to next layer \((\d+)\)/){
+			$curLayerNumber = $1;
+			print "; move to next layer: ".$curLayerNumber." detected. Resetting Extrusion distance.\n";
 			&resetExtrusionDist;
 		}
-		
-		#detect tool change as a line that starts with T<n> where <n> is any digit. Record the current tool for subsiquent lines.
-		if (/^T(\d+)/) {
-			$curToolIndex = $1;
-			print;
-			&resetExtrusionDist;
-			next;
-		}
-		
-		#for all other lines, if the current tool is #1 (ink)
-		if ($curToolIndex == 1){
-			
-			#skip reset extruder distance
-			if (/G92/){
-				print "; G92 - no reset extruder distance\n";	#print blank line (retain line numbers for easy comparison of before/after postscript code)
-				next;
-			}
-									
-			#if we are currently retracting (wiping or something) - deactivate extrusion
-			if (/; retract$/){
-				&turnPressureOff;					#turn pressure off if it isn't already
-				if (/G1 F-?\d+\.?\d*.*E?-?\d+\.?\d*.*; retract/){	#skip flat-out retractions
-					print ";commenting";				#comment the line.
-				}
-			}
-		
-			#detected a perimetr or fill (must activate extrusion)
-			if (/; perimeter|fill/){
-				&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
-			}elsif (/; compensate retraction/){
-				&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
-				print ";".$_;
-				next;
-			}
-			
-			#get rid of all extruder commands for the second extruder.
-			if (/E-?\d+\.?\d*/){
-				$_=$`." ".$';	#concat the string preceeding the match with that following the match. Saves back in to default var.
-			}
-			
-			#find all the "move to first perimeter/fill" commands and the first subsequent perimeter/fill command. Replace the feedrates for ink extrusion with the extracted ink feedrate.	
-			if(/(.*)F\d+\.?\d*(.*)(fill|perimeter)$/){
-				print $1." F".$retract_speeds[1]." ".$2.$3."; replaced feedrate - PrusaCircuitConverterScript\n";	#replace the feedrate with the feedrate (retraction speed) extracted from the header.
-				next;
-			}
-			
-
-		}
-	}
 	
-	#DONE with in line edititng! Print whatever's left of the current line!
-	print or die $!;	#print the line back or, if that fails, print the error message	  $!what just went wrong bang?
+		#SKIP EVERYTHING EXCEPT THE LAST LAYER (#7)
+		#if ($curLayerNumber<0 or $curLayerNumber >=6){
+	
+			#don't set temp tof extruder 1
+			next if (/M109.*T1/ or /M104.*T1/);
+		
+			#SKIP INFILL for faster print
+			next if (/infill/);
+		
+			#SUBTRACT Z OFFSET
+			if (/Z(-?\d+\.?\d*)/){
+					$_=$`." Z".$1.$';	#($1+$layerHeightOffset).$';
+			}
+		
+			#detect tool change as a line that starts with T<n> where <n> is any digit. Record the current tool for subsiquent lines.
+			if (/^T(\d+)/) {
+				$curToolIndex = $1;
+				print;
+				&resetExtrusionDist;
+				next;
+			}
+			
+			#for all other lines, if the current tool is #1 (ink)
+			if ($curToolIndex == 1){
+				
+				#skip reset extruder distance
+				if (/G92/){
+					print "; G92 - no reset extruder distance\n";	#print blank line (retain line numbers for easy comparison of before/after postscript code)
+					next;
+				}
+										
+				#if we are currently retracting (wiping or something) - deactivate extrusion
+				if (/; retract$/){
+					&turnPressureOff;					#turn pressure off if it isn't already
+					if (/G1 F-?\d+\.?\d*.*E?-?\d+\.?\d*.*; retract/){	#skip flat-out retractions
+						print ";commenting";				#comment the line.
+					}
+				}
+			
+				#detected a perimetr or fill (must activate extrusion)
+				if (/; perimeter|fill/){
+					&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
+				}elsif (/; compensate retraction/){
+					&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
+					print ";".$_;
+					next;
+				}
+				
+				#get rid of all extruder commands for the second extruder.
+				if (/E-?\d+\.?\d*/){
+					$_=$`." ".$';	#concat the string preceeding the match with that following the match. Saves back in to default var.
+				}
+				
+				#find all the "move to first perimeter/fill" commands and the first subsequent perimeter/fill command. Replace the feedrates for ink extrusion with the extracted ink feedrate.	
+				if(/(.*)F\d+\.?\d*(.*)(fill|perimeter)$/){
+					print $1." F".$retract_speeds[1]." ".$2.$3."; replaced feedrate - PrusaCircuitConverterScript\n";	#replace the feedrate with the feedrate (retraction speed) extracted from the header.
+					next;
+				}
+				
+
+			}
+		
+			#DONE with in line edititng! Print whatever's left of the current line!
+			print or die $!;	#print the line back or, if that fails, print the error message	  $!what just went wrong bang?
+		
+		#for any other layer than the 7th
+#		}else{
+#			next;
+#		}
+	}#end GCode Body
 }
 
 sub resetExtrusionDist{
