@@ -28,11 +28,10 @@ my $curToolIndex=0;		#currently lifted above the layer for traveling
 #my $curLayerHeight = 0;
 #my $curLayerNumber = 0;
 my $begunGCode = 0;		#have we reached the main body of the g code (or still in header comments)
-my $currentlyRetracting=0;
 
 #G Code commands to insert
-my $strPressureOn = "M400\nM42 P32 S255 ; Pressure off\n";
-my $strPressureOff = "M400\nM42 P32 S0 ; Pressure on\n";
+my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
+my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
 
 #hard coded
 my $lastFFDtoolIndex = 1;	#index of the last ordered extruder that is FDM
@@ -56,23 +55,27 @@ while(<>){	#loop through lines of file
 		if (/;CIRCUIT_POST_PROCESSOR: /){	#found a Custom Start G-Code command with Slicer parameters
 			if (/BEGIN G CODE/){
 				$begunGCode=1;
-				print "; FOUND START OF G CODE\n";
+				print ";\tFOUND START OF G CODE\n";
 			}elsif (/RETRACT_SPEED = (.*)/){	#Extract an array of extruder retraction speeds
 				my $strRetractSpeedList=$1;	#get the string with comma-separated retraction speeds
 				my $retractSpeed=0;		#currently extracted retraction speed
 				my $count=0;			#loop index
 				while ($strRetractSpeedList =~ /,(-?\d+\.?\d*)/g){	#loop through the list
 					$retractSpeed=$1;				#extract the number
+					$retractSpeed*=60;				#mm/s to mm/min
 					push(@retract_speeds, $retractSpeed);		#push to list
 					$count+=1;
 				}
 				local $"=', ';
-				print ";\t\tFound $count retract speeds: @retract_speeds\n";
+				print ";\tFound $count retract speeds: @retract_speeds\n";
 			}
 		}
 		
 	#start of G Code has already been found	
 	}else{
+	
+		#don't set temp tof extruder 1
+		next if (/M109.*T1/ or /M104.*T1/);
 	
 		#find and record layer changes
 		if (/Z(\d+.?\d*).*;.*move to next layer.*\(\d+\)/){
@@ -95,35 +98,44 @@ while(<>){	#loop through lines of file
 			
 			#skip reset extruder distance
 			if (/G92/){
-				print "; G92 - no reset extruder distance";	#print blank line (retain line numbers for easy comparison of before/after postscript code)
+				print "; G92 - no reset extruder distance\n";	#print blank line (retain line numbers for easy comparison of before/after postscript code)
+				next;
+			}
+									
+			#if we are currently retracting (wiping or something) - deactivate extrusion
+			if (/; retract$/){
+				&turnPressureOff;					#turn pressure off if it isn't already
+				if (/G1 F-?\d+\.?\d*.*E?-?\d+\.?\d*.*; retract/){	#skip flat-out retractions
+					print ";commenting";				#comment the line.
+				}
+			}
+		
+			#detected a perimetr or fill (must activate extrusion)
+			if (/; perimeter|fill/){
+				&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
+			}elsif (/; compensate retraction/){
+				&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
+				print ";".$_;
 				next;
 			}
 			
-			#if we are currently retracting (wiping or something)
-			if (/; retract$/){
-#				$currentlyRetracting=1;		#set state flag for retraction
-				&turnPressureOff;		#turn pressure off if it isn't already
-			}#else{					#if we aren't currently retracting, 
-#				if ($currentlyRetracting==1){	#...but we had been retracting on the previous line
-#					$currentlyRetracting=0;	#reset state flag
-#				}
-#			}
-		
-			#detected a perimetr or fill (extrusion)
-			if (/; perimeter|fill/ or /; compensate retraction$/){
-				&turnPressureOn;	#turn pressure on if it isn't already
+			#get rid of all extruder commands for the second extruder.
+			if (/E-?\d+\.?\d*/){
+				$_=$`." ".$';	#concat the string preceeding the match with that following the match. Saves back in to default var.
 			}
 			
 			#find all the "move to first perimeter/fill" commands and the first subsequent perimeter/fill command. Replace the feedrates for ink extrusion with the extracted ink feedrate.	
 			if(/(.*)F\d+\.?\d*(.*)(fill|perimeter)$/){
-				print $1." F".$retract_speeds[2]." ".$2.$3."; replaced feedrate - PrusaCircuitConverterScript";	#replace the feedrate with the feedrate (retraction speed) extracted from the header.
+				print $1." F".$retract_speeds[1]." ".$2.$3."; replaced feedrate - PrusaCircuitConverterScript\n";	#replace the feedrate with the feedrate (retraction speed) extracted from the header.
 				next;
 			}
+			
+
 		}
 	}
 	
 	#DONE with in line edititng! Print whatever's left of the current line!
-	#print or die $!;	#print the line back or, if that fails, print the error message	  $!what just went wrong bang?
+	print or die $!;	#print the line back or, if that fails, print the error message	  $!what just went wrong bang?
 }
 
 sub resetExtrusionDist{
