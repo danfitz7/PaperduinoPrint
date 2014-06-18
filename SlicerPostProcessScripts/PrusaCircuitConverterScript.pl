@@ -31,13 +31,17 @@ my $curToolIndex=0;		#currently lifted above the layer for traveling
 my $curLayerHeight = 0;
 my $curLayerNumber = -1;
 my $inGCodeBody = 0;		#have we reached the main body of the g code (or still in header comments)
+my $curZHeight =0;		#current Z height
 
 #G Code commands to insert
 my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
 my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
 my $strPauseCode = "M400\nM25 ; Pause\nM601 ; record current position\n";
 my $strResumePause = "M602\nM24 unpause\n";
-my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM17\nSEPARATE HERE\n";
+my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM17\n\nSEPARATE HERE\n\n";
+
+my $dwellTimeBeforeRetraction = 100;	#ms
+my $dwellTimeAfterRetractionCompensation = 100;
 
 #hard coded
 my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
@@ -89,6 +93,10 @@ while(<>){	#loop through lines of file
 		print or die $!;
 	#start of G Code has already been found	
 	}else{
+		#record Z heights
+		if (/Z(-?\d+.?\d*)/){
+			$curZHeight = $1;
+		}
 	
 		#find and record layer changes
 		if (/move to next layer \((\d+)\)/){
@@ -119,6 +127,8 @@ while(<>){	#loop through lines of file
 				
 				if ($curToolIndex == 1){
 					print $strEndFDMGCode;
+					
+					print "G1 Z".$curZHeight."; restore Z Travel Height before continuing print\n";
 				}
 				
 				next;
@@ -141,8 +151,8 @@ while(<>){	#loop through lines of file
 					}
 				}
 			
-				#detected a perimetr or fill (must activate extrusion)
-				if (/; perimeter|fill/){
+				#detected a perimeter or fill (must activate extrusion)
+				if (/; perimeter$|fill$/){
 					&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
 				}elsif (/; compensate retraction/){
 					&turnPressureOn;	#turn pressure on if it isn't already before printing this line as-is.
@@ -182,6 +192,7 @@ sub resetExtrusionDist{
 sub turnPressureOn{
 	if ($pressureOn==0){
 		print $strPressureOn;
+		print "G4 ".$dwellTimeAfterRetractionCompensation." ; dwell after retraction compensation\n";
 		$pressureOn=1;
 	}
 }
@@ -189,6 +200,7 @@ sub turnPressureOn{
 #turn pressure nozzle off
 sub turnPressureOff{
 	if ($pressureOn==1){
+		print "G4 ".$dwellTimeBeforeRetraction." ; dwell before retracting\n";
 		print $strPressureOff;
 		$pressureOn=0;
 	}
