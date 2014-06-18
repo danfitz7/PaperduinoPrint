@@ -40,8 +40,8 @@ my $strPauseCode = "M400\nM25 ; Pause\nM601 ; record current position\n";
 my $strResumePause = "M602\nM24 unpause\n";
 my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM17\n\nSEPARATE HERE\n\n";
 
-my $dwellTimeBeforeRetraction = 100;	#ms
-my $dwellTimeAfterRetractionCompensation = 100;
+my $dwellTimeBeforeRetraction = 300;	#ms
+my $dwellTimeAfterRetractionCompensation = 300;
 
 #hard coded
 my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
