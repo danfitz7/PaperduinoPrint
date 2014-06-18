@@ -16,6 +16,9 @@
 #	-Printer Settings -> Extruder <n>1> -> retraction -> Speed = feedrate for nozzle (in psi)
 #	-Printer Settings -> Extruder <n>1> -> retraction -> Extra length on restart = dell time for nozzle on starting a trace(in ms)
 
+#notes on tuning: 
+#	use Slic3r setting for nozzle offsets, nozzle diameters, temperatures, etc.
+#	no pressure control yet
 
 #!/usr/bin/perl -i
 use strict;
@@ -27,11 +30,14 @@ my $curExtrudingInk = 0;	#is the printer thinks it is currently extruding ink on
 my $curToolIndex=0;		#currently lifted above the layer for traveling
 my $curLayerHeight = 0;
 my $curLayerNumber = -1;
-my $begunGCode = 0;		#have we reached the main body of the g code (or still in header comments)
+my $inGCodeBody = 0;		#have we reached the main body of the g code (or still in header comments)
 
 #G Code commands to insert
 my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
 my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
+my $strPauseCode = "M400\nM25 ; Pause\nM601 ; record current position\n";
+my $strResumePause = "M602\nM24 unpause\n";
+my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM17\nSEPARATE HERE\n";
 
 #hard coded
 my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
@@ -54,12 +60,12 @@ $^I = 'PrusaCircuitConverterScript.bak';	#save a backup file to appease Windows
 while(<>){	#loop through lines of file
 	
 	#if the start of the body of the g code hasn't been reached yet
-	if ($begunGCode==0){
+	if ($inGCodeBody==0){
 		
 		#search for a post-procesor directive (Custom G code lines inserted by slic3r config)
 		if (/;CIRCUIT_POST_PROCESSOR: /){	#found a Custom Start G-Code command with Slicer parameters
 			if (/BEGIN G CODE/){
-				$begunGCode=1;
+				$inGCodeBody=1;
 				print ";\tFOUND START OF G CODE\n";
 			}elsif (/RETRACT_SPEED = (.*)/){	#Extract an array of extruder retraction speeds
 				my $strRetractSpeedList=$1;	#get the string with comma-separated retraction speeds
@@ -73,6 +79,9 @@ while(<>){	#loop through lines of file
 				}
 				local $"=', ';
 				print ";\tFound $count retract speeds: @retract_speeds\n";
+			}elsif (/END G CODE/){
+				$inGCodeBody=0;
+				print ";\tREACHED END OF G CODE\n";
 			}
 		}#end ifCircuit_Post_Processor
 		
@@ -107,6 +116,11 @@ while(<>){	#loop through lines of file
 				$curToolIndex = $1;
 				print;
 				&resetExtrusionDist;
+				
+				if ($curToolIndex == 1){
+					print $strEndFDMGCode;
+				}
+				
 				next;
 			}
 			
