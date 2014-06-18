@@ -144,10 +144,10 @@ while(<>){	#loop through lines of file
 				}
 										
 				#if we are currently retracting (wiping or something) - deactivate extrusion
-				if (/; retract$/){
+				if (/; retract$/ or /; retract for tool change$/){
 					&turnPressureOff;					#turn pressure off if it isn't already
 					if (/G1 F-?\d+\.?\d*.*E?-?\d+\.?\d*.*; retract/){	#skip flat-out retractions
-						print ";commenting";				#comment the line.
+						print ";commented retraction: ";				#comment the line.
 					}
 				}
 			
