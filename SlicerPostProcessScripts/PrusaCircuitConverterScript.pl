@@ -38,10 +38,10 @@ my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
 my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
 my $strPauseCode = "M400\nM25 ; Pause\nM601 ; record current position\n";
 my $strResumePause = "M602\nM24 unpause\n";
-my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM17\n\nSEPARATE HERE\n\n";
+my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM400\nG4 P60000 ; Dwell to catch component insertion pause.\n\nSEPARATE HERE\n\n";
 
-my $dwellTimeBeforeRetraction = 300;	#ms
-my $dwellTimeAfterRetractionCompensation = 300;
+my $dwellTimeBeforeRetraction = 1;#200;	#ms
+my $dwellTimeAfterRetractionCompensation = 1;#200; #ms
 
 #hard coded
 my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
@@ -51,6 +51,9 @@ my @retract_speeds;				#list of retraction speeds for extruders
 my @retractLengthToolchange;			#list of retract lengths for tool changes of extruders
 my @retractRestartExtra;			#list of retraction lenths added to retraciton compensation for each nozzle
 my @retractRestartExtraToolchange;		#list of retraction lenths added to retraction compensation on tool changes for each nozzle
+
+#FIXME
+my $looking_for_next_moveToFirst = 0;
 
 #offsets
 #my $layerHeight=0.2;
@@ -83,9 +86,6 @@ while(<>){	#loop through lines of file
 				}
 				local $"=', ';
 				print ";\tFound $count retract speeds: @retract_speeds\n";
-			}elsif (/END G CODE/){
-				$inGCodeBody=0;
-				print ";\tREACHED END OF G CODE\n";
 			}
 		}#end ifCircuit_Post_Processor
 		
@@ -93,6 +93,18 @@ while(<>){	#loop through lines of file
 		print or die $!;
 	#start of G Code has already been found	
 	}else{
+		
+		if (/G28 X0  ; home X axis/){
+			print "G1 Z".($curZHeight+10)." ; final raise before X home\n";
+			print;
+			next;
+		}
+
+#		if (/END G CODE/){
+#			$inGCodeBody=0;
+#			print ";\tREACHED END OF G CODE\n";
+#		}
+		
 		#record Z heights
 		if (/Z(-?\d+.?\d*)/){
 			$curZHeight = $1;
@@ -105,19 +117,22 @@ while(<>){	#loop through lines of file
 			&resetExtrusionDist;
 		}
 	
+		#if we just changed tools, we want to hover over the point the next tool will start at and allow the user to pause to check nozzle alignment
+		if ($looking_for_next_moveToFirst ==1 and /^G1.*; move to first/){
+			$looking_for_next_moveToFirst=0;
+			print "M400\nG4 P60000 ; Dwell to catch nozzle alignment pause.\n";
+		}
+	
 		#SKIP EVERYTHING EXCEPT THE LAST LAYER (#7)
 		#if ($curLayerNumber<0 or $curLayerNumber >=6){
 	
 			#don't set temp tof extruder 1
 			next if (/M109.*T1/ or /M104.*T1/);
 		
-			#SKIP INFILL for faster print
-			next if (/infill/);
-		
 			#SUBTRACT Z OFFSET
-			if (/Z(-?\d+\.?\d*)/){
-					$_=$`." Z".$1.$';	#($1+$layerHeightOffset).$';
-			}
+#			if (/Z(-?\d+\.?\d*)/){
+#				$_=$`." Z".$1.$';	#($1+$layerHeightOffset).$';
+#			}
 		
 			#detect tool change as a line that starts with T<n> where <n> is any digit. Record the current tool for subsiquent lines.
 			if (/^T(\d+)/) {
@@ -127,7 +142,7 @@ while(<>){	#loop through lines of file
 				
 				if ($curToolIndex == 1){
 					print $strEndFDMGCode;
-					
+					$looking_for_next_moveToFirst = 1;
 					print "G1 Z".$curZHeight."; restore Z Travel Height before continuing print\n";
 				}
 				
@@ -192,7 +207,7 @@ sub resetExtrusionDist{
 sub turnPressureOn{
 	if ($pressureOn==0){
 		print $strPressureOn;
-		print "G4 ".$dwellTimeAfterRetractionCompensation." ; dwell after retraction compensation\n";
+		print "G4 P".$dwellTimeAfterRetractionCompensation." ; dwell after retraction compensation\n";
 		$pressureOn=1;
 	}
 }
@@ -200,7 +215,7 @@ sub turnPressureOn{
 #turn pressure nozzle off
 sub turnPressureOff{
 	if ($pressureOn==1){
-		print "G4 ".$dwellTimeBeforeRetraction." ; dwell before retracting\n";
+		print "G4 P".$dwellTimeBeforeRetraction." ; dwell before retracting\n";
 		print $strPressureOff;
 		$pressureOn=0;
 	}
