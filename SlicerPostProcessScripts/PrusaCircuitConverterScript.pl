@@ -38,10 +38,10 @@ my $strPressureOn = "M400\nM42 P32 S255 ; Pressure on\n";
 my $strPressureOff = "M400\nM42 P32 S0 ; Pressure off\n";
 my $strPauseCode = "M400\nM25 ; Pause\nM601 ; record current position\n";
 my $strResumePause = "M602\nM24 unpause\n";
-my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM400\nG4 P60000 ; Dwell to catch component insertion pause.\n\nSEPARATE HERE\n\n";
+my $strEndFDMGCode = ";END FDM G CODE\nM400\nM42 P32 S0\nG91\nG1 Z5 F6000\nG90\nG1 X5\nM400\nG4 P0 ; Dwell to catch component insertion pause.\n\nCIRCUIT STARTS HERE\n\n";
 
-my $dwellTimeBeforeRetraction = 1;#200;	#ms
-my $dwellTimeAfterRetractionCompensation = 1;#200; #ms
+my $dwellTimeBeforeRetraction = 100;	#ms
+my $dwellTimeAfterRetractionCompensation = 100; #ms
 
 #hard coded
 my $lastFFDtoolIndex = 1.2;	#index of the last ordered extruder that is FDM
@@ -95,7 +95,7 @@ while(<>){	#loop through lines of file
 	}else{
 		
 		if (/G28 X0  ; home X axis/){
-			print "G1 Z".($curZHeight+10)." ; final raise before X home\n";
+			print "M400\nG1 Z".($curZHeight+5)." ; final raise before X home\n";
 			print;
 			next;
 		}
@@ -120,7 +120,7 @@ while(<>){	#loop through lines of file
 		#if we just changed tools, we want to hover over the point the next tool will start at and allow the user to pause to check nozzle alignment
 		if ($looking_for_next_moveToFirst ==1 and /^G1.*; move to first/){
 			$looking_for_next_moveToFirst=0;
-			print "M400\nG4 P60000 ; Dwell to catch nozzle alignment pause.\n";
+			print "M400\nG4 P0 ; Dwell to catch nozzle alignment pause.\n";
 		}
 	
 		#SKIP EVERYTHING EXCEPT THE LAST LAYER (#7)
